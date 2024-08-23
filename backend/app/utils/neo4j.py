@@ -1,4 +1,3 @@
-
 def named_entity_exists(driver, namedentity_id: str) -> bool:
     """Check if a NamedEntity exists in the database."""
     with driver.session() as session:
