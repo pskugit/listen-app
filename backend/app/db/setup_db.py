@@ -26,15 +26,15 @@ def fill_database_with_testdata():
             session.run("CREATE (person3:NamedEntity:Person {name: 'Anna', namedentity_id: 'ne3'})")
             
             # Creating test statements and is_about relationships
-            session.run("CREATE (statement1:Statement {text: 'Lieblingseis: Zitrone', statement_id: 's1'})")
+            session.run("CREATE (statement1:Statement {statement_text: 'Lieblingseis: Zitrone', statement_id: 's1'})")
             session.run("MATCH (person:NamedEntity {namedentity_id: 'ne1'}), (statement:Statement {statement_id: 's1'}) "
                         "CREATE (statement)-[:IS_ABOUT]->(person)")
             
-            session.run("CREATE (statement2:Statement {text: 'has a dog', statement_id: 's2'})")
+            session.run("CREATE (statement2:Statement {statement_text: 'has a dog', statement_id: 's2'})")
             session.run("MATCH (person:NamedEntity {namedentity_id: 'ne2'}), (statement:Statement {statement_id: 's2'}) "
                         "CREATE (statement)-[:IS_ABOUT]->(person)")
             
-            session.run("CREATE (statement:Statement {text: 'Married @Anna in Venice on 26.05.2023', statement_id: 's3'})")
+            session.run("CREATE (statement:Statement {statement_text: 'Married @Anna in Venice on 26.05.2023', statement_id: 's3'})")
             session.run("MATCH (person1:NamedEntity {namedentity_id: 'ne1'}), (statement:Statement {statement_id: 's3'}) "
                         "CREATE (statement)-[:IS_ABOUT]->(person1)")
             session.run("MATCH (person2:NamedEntity {namedentity_id: 'ne3'}), (statement:Statement {statement_id: 's3'}) "
