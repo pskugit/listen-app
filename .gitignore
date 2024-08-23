@@ -1,0 +1,14 @@
+# Node modules
+/frontend/ListenApp/node_modules
+
+# Python files
+__pycache__/
+*.pyc
+
+# Docker files
+.env
+*.db
+
+.DS_Store
+
+secrets/
