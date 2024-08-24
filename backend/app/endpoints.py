@@ -146,50 +146,41 @@ def add_topic(topic: Topic):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Endpoint to add a Statement
 @router.post("/add_statement/")
 def add_statement(statement: Statement):
-     # Validate that the text is not empty
+    # Validate that the text is not empty
     if not statement.text.strip():
         raise HTTPException(status_code=400, detail="text cannot be empty")
 
-    statement_id = statement.statement_id or str(uuid4())
+    statement.statement_id = statement.statement_id or str(uuid4())
+    
     try:
         # Check if the main NamedEntity exists
         if not named_entity_exists(driver, statement.about_namedentity_id):
             raise HTTPException(status_code=404, detail="NamedEntity that the statement is about does not exist")
 
-        # Create the Statement
         with driver.session() as session:
+            # Create the Statement
             session.run("""
                 CREATE (s:Statement {text: $text, statement_id: $statement_id})
-            """, text=statement.text, statement_id=statement_id)
+            """, text=statement.text, statement_id=statement.statement_id)
 
             # Create the relationship to the main NamedEntity
             session.run("""
                 MATCH (s:Statement {statement_id: $statement_id}), 
                       (p:NamedEntity {namedentity_id: $namedentity_id})
                 CREATE (s)-[:IS_ABOUT]->(p)
-            """, statement_id=statement_id, namedentity_id=statement.about_namedentity_id)
+            """, statement_id=statement.statement_id, namedentity_id=statement.about_namedentity_id)
 
-            # Iterate over mentioned_namedentity_ids and create relationships
-            mentioned_entity_ids = []
-            if statement.mentioned_namedentity_ids:
-                for mentioned_id in statement.mentioned_namedentity_ids:
-                    if named_entity_exists(driver, mentioned_id):
-                        session.run("""
-                            MATCH (s:Statement {statement_id: $statement_id}), 
-                                  (m:NamedEntity {namedentity_id: $mentionedentity_id})
-                            CREATE (s)-[:MENTIONS]->(m)
-                        """, statement_id=statement_id, mentionedentity_id=mentioned_id)
-                        mentioned_entity_ids.append(mentioned_id)
+            # Handle MENTIONS relationships
+            create_mentions_relationships(session, statement)
 
             # Create additional SOME_RELATION relationships
-            if mentioned_entity_ids:
-                entity_ids = mentioned_entity_ids + [statement.about_namedentity_id]
+            if statement.mentioned_namedentity_ids:
+                entity_ids = statement.mentioned_namedentity_ids + [statement.about_namedentity_id]
                 create_additional_relations(session, entity_ids)
 
-        return {"message": "Statement added successfully", "statement_id": statement_id}
+        return {"message": "Statement added successfully", "statement_id": statement.statement_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -212,6 +203,16 @@ def create_additional_relations(session, entity_ids: List[str], relation_type="S
                 CREATE (e2)-[:{relation_type}]->(e1)
             """, source_id=source_id, target_id=target_id)
 
+def create_mentions_relationships(session, statement):
+    """Create MENTIONS relationships from the statement to the mentioned named entities."""
+    if statement.mentioned_namedentity_ids:
+        for mentioned_id in statement.mentioned_namedentity_ids:
+            if named_entity_exists(driver, mentioned_id):
+                session.run("""
+                    MATCH (s:Statement {statement_id: $statement_id}), 
+                          (m:NamedEntity {namedentity_id: $mentionedentity_id})
+                    CREATE (s)-[:MENTIONS]->(m)
+                """, statement_id=statement.statement_id, mentionedentity_id=mentioned_id)
 
 # Endpoint to update a node
 @router.post("/update_node/", description="Update a node based on its id and label.")
