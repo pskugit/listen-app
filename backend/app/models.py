@@ -4,6 +4,10 @@ from typing import Any, Dict
 from pydantic import BaseModel, Field
 
 # Data classes
+class Topic(BaseModel):
+    name: str
+    topic_id: str = None 
+
 class NamedEntity(BaseModel):
     name: str
     namedentity_id: str = None  # Optional for ID generation
@@ -23,7 +27,7 @@ class Relationship(BaseModel):
     from_node: str
     to_node: str
     relationship: str
-    attributes: RelationshipAttributes
+    attributes: Optional[RelationshipAttributes]
 
 class Connection(BaseModel):
     connected_entity: NamedEntity
