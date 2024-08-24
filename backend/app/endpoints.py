@@ -129,7 +129,7 @@ def add_statement(statement: Statement):
         # Create the Statement
         with driver.session() as session:
             session.run("""
-                CREATE (s:Statement {text: $statement_text, statement_id: $statement_id})
+                CREATE (s:Statement {statement_text: $statement_text, statement_id: $statement_id})
             """, statement_text=statement.statement_text, statement_id=statement_id)
 
             # Create the relationship to the main NamedEntity
