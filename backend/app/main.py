@@ -1,20 +1,26 @@
 import os
 from fastapi import FastAPI
-from app.db.setup_db import is_database_empty, setup_database, fill_database_with_testdata  # Make sure to import the driver
-from app.endpoints import router as endpoints_router
+from app.db.setup_db import is_database_empty, setup_database, fill_database_with_testdata
+from app.endpoints.general import router as general_router
+from app.endpoints.statement import router as statement_router
+from app.endpoints.namedentity import router as namedentity_router
+from app.endpoints.topic import router as topic_router
 
 app = FastAPI()
 
 @app.on_event("startup")
 async def startup_event():
-        #print("Database is filled initally since there is no backup file")
-        #setup_database()
-        #fill_database_with_testdata()
-        pass
+    # Uncomment and modify as needed
+    # if is_database_empty():
+    #     setup_database()
+    #     fill_database_with_testdata()
+    pass
 
-
-# Include your endpoints router
-app.include_router(endpoints_router)
+# Include your routers with distinct prefixes
+app.include_router(general_router, prefix="/general", tags=["General"])
+app.include_router(statement_router, prefix="/statements", tags=["Statements"])
+app.include_router(namedentity_router, prefix="/namedentities", tags=["Named Entities"])
+app.include_router(topic_router, prefix="/topics", tags=["Topics"])
 
 @app.get("/")
 async def read_root():
