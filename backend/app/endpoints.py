@@ -2,8 +2,9 @@ from fastapi import APIRouter, HTTPException
 from neo4j import GraphDatabase
 from typing import Any, Dict, List
 from uuid import uuid4
-from app.models import NamedEntity, Statement, Connection, RelationshipAttributes, Relationship
+from app.models import NamedEntity, Statement, Connection, RelationshipAttributes, Relationship, Topic
 from app.utils.neo4j import named_entity_exists
+from pydantic import ValidationError
 
 # Create an instance of APIRouter
 router = APIRouter()
@@ -128,10 +129,22 @@ def add_namedentity(named_entity: NamedEntity):
             session.run("""
             CREATE (p:NamedEntity {name: $name, namedentity_id: $namedentity_id})
             """, name=named_entity.name, namedentity_id=namedentity_id)
-        return {"message": "NamedEntity added successfully", "namedentity_id": namedentity_id}
+        return {"message": "NamedEntity added successfully", "name": named_entity.name, "namedentity_id": namedentity_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+# Endpoint to add a Topic
+@router.post("/add_topic/", description="Add a new Topic to the database.")
+def add_topic(topic: Topic):
+    topic_id = topic.topic_id or str(uuid4())
+    try:
+        with driver.session() as session:
+            session.run(""" 
+            CREATE (p:Topic {name: $name, topic_id: $topic_id})
+            """, name=topic.name, topic_id=topic_id)
+        return {"message": "Topic added successfully", "name": topic.name, "topic_id": topic_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Endpoint to add a Statement
 @router.post("/add_statement/")
@@ -188,7 +201,6 @@ def delete_statement_relationships(session, statement_id: str):
         DELETE r
     """, statement_id=statement_id)
 
-
 def create_additional_relations(session, entity_ids: List[str], relation_type="SOME_RELATION"):
     """Create connections of type relation_type between all named entities in the list."""
     for i, source_id in enumerate(entity_ids):
@@ -201,10 +213,29 @@ def create_additional_relations(session, entity_ids: List[str], relation_type="S
             """, source_id=source_id, target_id=target_id)
 
 
+# Endpoint to update a node
 @router.post("/update_node/", description="Update a node based on its id and label.")
 def update_node(label: str, node_id: str, updates: Dict[str, Any]):
     try:
-        set_clause = ", ".join([f"n.{key} = ${key}" for key in updates.keys()])
+        # Determine the correct Pydantic model based on the label
+        model_map = {
+            "statement": Statement,
+            "namedentity": NamedEntity,
+            "topic": Topic
+        }
+
+        model = model_map.get(label.lower())
+        if model is None:
+            raise HTTPException(status_code=400, detail=f"Invalid label: {label}")
+
+        # Validate updates against the model
+        try:
+            validated_data = model(**updates)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        # Construct the SET clause for the Cypher query
+        set_clause = ", ".join([f"n.{key} = ${key}" for key in validated_data.dict().keys()])
         query = f"""
             MATCH (n:{label} {{ {label.lower()}_id: $node_id }})
             SET {set_clause}
@@ -216,7 +247,7 @@ def update_node(label: str, node_id: str, updates: Dict[str, Any]):
             if label.lower() == "statement":
                 delete_statement_relationships(session, node_id)
 
-            result = session.run(query, node_id=node_id, **updates)
+            result = session.run(query, node_id=node_id, **validated_data.dict())
 
             updated_node = result.single()
             if updated_node is None:
@@ -225,6 +256,7 @@ def update_node(label: str, node_id: str, updates: Dict[str, Any]):
             return {"message": f"{label} updated successfully", "node": updated_node["n"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
 
 @router.post("/delete_node/", description="Delete a node based on its id and label.")
 def delete_node(label: str, node_id: str):
