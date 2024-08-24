@@ -8,15 +8,25 @@ class Topic(BaseModel):
     name: str
     topic_id: str = None 
 
+    class Config:
+        allow_mutation = True  # Allow mutation of fields after instantiation
+
 class NamedEntity(BaseModel):
     name: str
-    namedentity_id: str = None  # Optional for ID generation
+    namedentity_id: str = None 
+
+    class Config:
+        allow_mutation = True  # Allow mutation of fields after instantiation
 
 class Statement(BaseModel):
     text: str
-    statement_id: str = None  # Optional for ID generation
+    statement_id: str = None 
     about_namedentity_id: str
     mentioned_namedentity_ids: Optional[List[str]] = None  # Optional field
+    
+    class Config:
+        allow_mutation = True  # Allow mutation of fields after instantiation
+    
 
 class RelationshipAttributes(BaseModel):
     source_statement_id: str
