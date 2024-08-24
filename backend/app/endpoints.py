@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from neo4j import GraphDatabase
-from typing import List
+from typing import Any, Dict, List
 from uuid import uuid4
 from app.models import NamedEntity, Statement, Connection, RelationshipAttributes, Relationship
 from app.utils.neo4j import named_entity_exists
@@ -22,6 +22,22 @@ async def test_connection():
     except Exception as e:
         return HTTPException(status_code=500, detail=str(e))
     
+@router.post("/get_node/", description="Get a node based on its id and label.")
+def get_node(label: str, node_id: str):
+    try:
+        with driver.session() as session:
+            result = session.run(f"""
+                MATCH (n:{label} {{ {label.lower()}_id: $node_id }})
+                RETURN n
+            """, node_id=node_id)
+
+            node = result.single()
+            if node is None:
+                raise HTTPException(status_code=404, detail=f"{label} with id {node_id} not found")
+
+            return node["n"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Endpoint to retrieve all named entities connected to a given named entity
 @router.post("/get_connections_for_namedenity/", response_model=List[Connection], description="Get all named entities connected to the given named entity.")
@@ -66,21 +82,21 @@ def get_statements_for_namedentity(named_entity: NamedEntity):
             # First, retrieve statements related to the named entity
             result = session.run("""
                 MATCH (s:Statement)-[:IS_ABOUT]->(n:NamedEntity {namedentity_id: $namedentity_id})
-                RETURN s.statement_text AS statement_text, s.statement_id AS statement_id
+                RETURN s.text AS text, s.statement_id AS statement_id
             """, namedentity_id=named_entity.namedentity_id)
 
             statements = []
             for record in result:
                 statement_id = record["statement_id"]
-                statement_text = record["statement_text"]
+                text = record["text"]
 
                 # Check if the retrieved values are not None
-                if statement_text is None or statement_id is None:
+                if text is None or statement_id is None:
                     raise HTTPException(status_code=500, detail="Statement data is incomplete")
 
                 # Create a Statement instance with the required fields
                 statement = Statement(
-                    statement_text=statement_text,
+                    text=text,
                     statement_id=statement_id,
                     about_namedentity_id=named_entity.namedentity_id,  # Set the about_namedentity_id
                     mentioned_namedentity_ids=None  # Placeholder for now
@@ -120,6 +136,10 @@ def add_namedentity(named_entity: NamedEntity):
 # Endpoint to add a Statement
 @router.post("/add_statement/")
 def add_statement(statement: Statement):
+     # Validate that the text is not empty
+    if not statement.text.strip():
+        raise HTTPException(status_code=400, detail="text cannot be empty")
+
     statement_id = statement.statement_id or str(uuid4())
     try:
         # Check if the main NamedEntity exists
@@ -129,8 +149,8 @@ def add_statement(statement: Statement):
         # Create the Statement
         with driver.session() as session:
             session.run("""
-                CREATE (s:Statement {statement_text: $statement_text, statement_id: $statement_id})
-            """, statement_text=statement.statement_text, statement_id=statement_id)
+                CREATE (s:Statement {text: $text, statement_id: $statement_id})
+            """, text=statement.text, statement_id=statement_id)
 
             # Create the relationship to the main NamedEntity
             session.run("""
@@ -140,6 +160,7 @@ def add_statement(statement: Statement):
             """, statement_id=statement_id, namedentity_id=statement.about_namedentity_id)
 
             # Iterate over mentioned_namedentity_ids and create relationships
+            mentioned_entity_ids = []
             if statement.mentioned_namedentity_ids:
                 for mentioned_id in statement.mentioned_namedentity_ids:
                     if named_entity_exists(driver, mentioned_id):
@@ -148,8 +169,101 @@ def add_statement(statement: Statement):
                                   (m:NamedEntity {namedentity_id: $mentionedentity_id})
                             CREATE (s)-[:MENTIONS]->(m)
                         """, statement_id=statement_id, mentionedentity_id=mentioned_id)
+                        mentioned_entity_ids.append(mentioned_id)
+
+            # Create additional SOME_RELATION relationships
+            if mentioned_entity_ids:
+                entity_ids = mentioned_entity_ids + [statement.about_namedentity_id]
+                create_additional_relations(session, entity_ids)
 
         return {"message": "Statement added successfully", "statement_id": statement_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def delete_statement_relationships(session, statement_id: str):
+    """Deletes relationships derived from a specific statement."""
+    session.run("""
+        MATCH ()-[r]->() 
+        WHERE r.source_statement = $statement_id
+        DELETE r
+    """, statement_id=statement_id)
+
+
+def create_additional_relations(session, entity_ids: List[str], relation_type="SOME_RELATION"):
+    """Create connections of type relation_type between all named entities in the list."""
+    for i, source_id in enumerate(entity_ids):
+        for target_id in entity_ids[i+1:]:
+            session.run(f"""
+                MATCH (e1:NamedEntity {{namedentity_id: $source_id}}),
+                      (e2:NamedEntity {{namedentity_id: $target_id}})
+                CREATE (e1)-[:{relation_type}]->(e2)
+                CREATE (e2)-[:{relation_type}]->(e1)
+            """, source_id=source_id, target_id=target_id)
+
+
+@router.post("/update_node/", description="Update a node based on its id and label.")
+def update_node(label: str, node_id: str, updates: Dict[str, Any]):
+    try:
+        set_clause = ", ".join([f"n.{key} = ${key}" for key in updates.keys()])
+        query = f"""
+            MATCH (n:{label} {{ {label.lower()}_id: $node_id }})
+            SET {set_clause}
+            RETURN n
+        """
+
+        with driver.session() as session:
+            # Check if the label is "Statement" and handle accordingly
+            if label.lower() == "statement":
+                delete_statement_relationships(session, node_id)
+
+            result = session.run(query, node_id=node_id, **updates)
+
+            updated_node = result.single()
+            if updated_node is None:
+                raise HTTPException(status_code=404, detail=f"{label} with id {node_id} not found")
+
+            return {"message": f"{label} updated successfully", "node": updated_node["n"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/delete_node/", description="Delete a node based on its id and label.")
+def delete_node(label: str, node_id: str):
+    try:
+        with driver.session() as session:
+            # Check if the label is "Statement" and handle accordingly
+            if label.lower() == "statement":
+                delete_statement_relationships(session, node_id)
+
+            # Delete the node
+            result = session.run(f"""
+                MATCH (n:{label} {{ {label.lower()}_id: $node_id }})
+                DETACH DELETE n
+            """, node_id=node_id)
+
+            # Check if the node was deleted
+            summary = result.consume()
+            if summary.counters.nodes_deleted == 0:
+                raise HTTPException(status_code=404, detail=f"{label} with id {node_id} not found")
+
+            return {"message": f"{label} deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.post("/get_namedentities_with_name/", description="Get all nodes with a specific name.")
+def get_namedentities_with_name(label: str, name: str):
+    try:
+        with driver.session() as session:
+            result = session.run(f"""
+                MATCH (n:{label} {{ name: $name }})
+                RETURN n
+            """, name=name)
+
+            nodes = [record["n"] for record in result]
+            if not nodes:
+                raise HTTPException(status_code=404, detail=f"No {label} found with name {name}")
+
+            return {"nodes": nodes}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

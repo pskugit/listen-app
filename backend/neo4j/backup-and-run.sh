@@ -15,7 +15,7 @@ while true; do
     echo "Neo4j is running. Waiting for the next backup cycle..."
 
     # Wait for 5 minutes (300 seconds)
-    sleep 60
+    sleep 300
 
     echo "Creating Cypher export..."
 
