@@ -1,19 +1,26 @@
-version: '3.8'  # Make sure the version is compatible
-
+version: '3.8'
 services:
+  neo4j:
+    build:
+      context: ./backend/neo4j
+      dockerfile: Dockerfile
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - ./backend/neo4j/backups:/backups
+      - ./backend/neo4j/plugins:/plugins
+    environment:
+      NEO4J_AUTH: "neo4j/password"
+      NEO4J_PLUGINS: '["apoc"]'  # Enables the APOC plugin
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_import_file_use__neo4j__config: "false"
+
   backend:
     build:
       context: ./backend
     ports:
       - "8000:8000"
     depends_on:
-      - neo4j  # You can leave this as is since it won't cause issues
-
-  neo4j:
-    image: neo4j:latest
-    ports:
-      - "7474:7474"
-      - "7687:7687"
-    environment:
-      NEO4J_AUTH: "neo4j/password"
-    # Remove healthcheck configuration
+      - neo4j

@@ -4,6 +4,19 @@ from neo4j.exceptions import ServiceUnavailable
 
 driver = GraphDatabase.driver("bolt://neo4j:7687", auth=("neo4j", "password"))
 
+def is_database_empty():
+    for _ in range(5):  # Retry 5 times
+        try:
+            with driver.session() as session:
+                result = session.run("MATCH (n) RETURN count(n) AS node_count")
+                node_count = result.single()["node_count"]
+                return node_count == 0
+        except ServiceUnavailable:
+            print("Neo4j is not available yet, retrying...")
+            time.sleep(2)  # Wait before retrying
+        except Exception as e:
+            print(f"An error occurred: {e}")
+    
 def setup_database():
     for _ in range(5):  # Retry 5 times
         try:

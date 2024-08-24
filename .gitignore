@@ -1,14 +1,37 @@
 # Node modules
 /frontend/ListenApp/node_modules
 
-# Python files
-__pycache__/
-*.pyc
-
-# Docker files
-.env
-*.db
-
-.DS_Store
-
+# Secrets
 secrets/
+
+# Ignore all files in the backups directory
+backend/neo4j/backups/*
+
+# Ignore Neo4j data directory if used 
+backend/neo4j/data/*
+
+# Ignore log files and temporary files
+*.log
+*.tmp
+
+# Ignore IDE and editor specific files
+.idea/
+.vscode/
+*.swp
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
+
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+
+# Ignore environment variables and configuration files
+.env
+*.env
+
+# Ignore any compiled files
+*.egg-info/
+dist/
+build/
