@@ -119,15 +119,18 @@ def get_statements_for_namedentity(named_entity: NamedEntity):
         raise HTTPException(status_code=500, detail=str(e))
 
     
-    
-# Endpoint to add a NamedEntity
 @router.post("/add_namedentity/", description="Add a new NamedEntity to the database.")
 def add_namedentity(named_entity: NamedEntity):
     namedentity_id = named_entity.namedentity_id or str(uuid4())
     try:
+        # Convert the additional_types list into a string of labels
+        additional_labels = ""
+        if named_entity.additional_types:
+            additional_labels = ":" + ":".join(named_entity.additional_types)
+
         with driver.session() as session:
-            session.run("""
-            CREATE (p:NamedEntity {name: $name, namedentity_id: $namedentity_id})
+            session.run(f"""
+            CREATE (p:NamedEntity{additional_labels} {{name: $name, namedentity_id: $namedentity_id}})
             """, name=named_entity.name, namedentity_id=namedentity_id)
         return {"message": "NamedEntity added successfully", "name": named_entity.name, "namedentity_id": namedentity_id}
     except Exception as e:
@@ -178,7 +181,7 @@ def add_statement(statement: Statement):
             # Create additional SOME_RELATION relationships
             if statement.mentioned_namedentity_ids:
                 entity_ids = statement.mentioned_namedentity_ids + [statement.about_namedentity_id]
-                create_additional_relations(session, entity_ids)
+                create_additional_relations(session, entity_ids, statement)
 
         return {"message": "Statement added successfully", "statement_id": statement.statement_id}
     except Exception as e:
@@ -192,16 +195,16 @@ def delete_statement_relationships(session, statement_id: str):
         DELETE r
     """, statement_id=statement_id)
 
-def create_additional_relations(session, entity_ids: List[str], relation_type="SOME_RELATION"):
+def create_additional_relations(session, entity_ids: List[str], source_statement: Statement, relation_type="SOME_RELATION"):
     """Create connections of type relation_type between all named entities in the list."""
     for i, source_id in enumerate(entity_ids):
         for target_id in entity_ids[i+1:]:
             session.run(f"""
                 MATCH (e1:NamedEntity {{namedentity_id: $source_id}}),
                       (e2:NamedEntity {{namedentity_id: $target_id}})
-                CREATE (e1)-[:{relation_type}]->(e2)
-                CREATE (e2)-[:{relation_type}]->(e1)
-            """, source_id=source_id, target_id=target_id)
+                CREATE (e1)-[:{relation_type} {{source_statement_id: $source_statement_id}}]->(e2)
+                CREATE (e2)-[:{relation_type} {{source_statement_id: $source_statement_id}}]->(e1)
+            """, source_id=source_id, target_id=target_id, source_statement_id=source_statement.statement_id)
 
 def create_mentions_relationships(session, statement):
     """Create MENTIONS relationships from the statement to the mentioned named entities."""
@@ -284,19 +287,19 @@ def delete_node(label: str, node_id: str):
     
 
 @router.post("/get_namedentities_with_name/", description="Get all nodes with a specific name.")
-def get_namedentities_with_name(label: str, name: str):
+def get_namedentities_with_name(name: str):
     try:
         with driver.session() as session:
             result = session.run(f"""
-                MATCH (n:{label} {{ name: $name }})
+                MATCH (n:NamedEntity {{ name: $name }})
                 RETURN n
             """, name=name)
 
-            nodes = [record["n"] for record in result]
-            if not nodes:
-                raise HTTPException(status_code=404, detail=f"No {label} found with name {name}")
+            namedentities = [record["n"] for record in result]
+            if not namedentities:
+                raise HTTPException(status_code=404, detail=f"No NamedEntity found with name {name}")
 
-            return {"nodes": nodes}
+            return {"namedentities": namedentities}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
