@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from uuid import uuid4
 from app.models import Statement
+from app.genai.genai import derive_relation_type_from_text
 from app.utils.neo4j import named_entity_exists, get_driver
 
 router = APIRouter()
@@ -29,7 +30,8 @@ def remove_mentions_relationships(session, statement_id: str):
     """, statement_id=statement_id)
 
 
-def create_additional_relations(session, source_statement: Statement, entity_ids: List[str], relation_type="SOME_RELATION"):
+def create_additional_relations(session, source_statement: Statement, entity_ids: List[str]):
+    relation_type = derive_relation_type_from_text(source_statement.text)
     """Create connections of type relation_type between all named entities in the list."""
     for i, source_id in enumerate(entity_ids):
         for target_id in entity_ids[i+1:]:
