@@ -5,7 +5,7 @@
 secrets/
 
 # Ignore all files in the backups directory
-backend/neo4j/backups/*
+backend/neo4j/backups/database.cypher
 
 # Ignore Neo4j data directory if used 
 backend/neo4j/data/*
