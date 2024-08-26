@@ -3,7 +3,7 @@ from typing import List
 from uuid import uuid4
 from app.models import NamedEntity, Statement
 from app.utils.neo4j import get_driver
-from app.endpoints.statement import delete_statement
+from app.endpoints.statement import delete_statement_by_id
 
 router = APIRouter()
 
@@ -14,10 +14,10 @@ driver = get_driver()
 def create(named_entity: NamedEntity):
     namedentity_id = named_entity.namedentity_id or str(uuid4())
     try:
-        # Convert the additional_types list into a string of labels
+        # Convert the additional_labels list into a string of labels
         additional_labels = ""
-        if named_entity.additional_types:
-            additional_labels = ":" + ":".join(named_entity.additional_types)
+        if named_entity.additional_labels:
+            additional_labels = ":" + ":".join(named_entity.additional_labels)
 
         with driver.session() as session:
             session.run(f"""
@@ -46,7 +46,7 @@ def read_namedentity(namedentity_id: str):
         named_entity = NamedEntity(
             name=node["name"],
             namedentity_id=node["namedentity_id"],
-            additional_types=[label for label in labels if label != "NamedEntity"]
+            additional_labels=[label for label in labels if label != "NamedEntity"]
         )
         
         return named_entity
@@ -70,7 +70,7 @@ def get_by_name(name: str):
                 named_entity = NamedEntity(
                     name=node["name"],
                     namedentity_id=node["namedentity_id"],
-                    additional_types=[label for label in labels if label != "NamedEntity"]
+                    additional_labels=[label for label in labels if label != "NamedEntity"]
                 )
 
                 namedentities.append(named_entity)
@@ -120,21 +120,36 @@ def get_statements(named_entity: NamedEntity = Depends(read_namedentity)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/update_type/")
-def update_type(named_entity: NamedEntity = Depends(read_namedentity), additional_types: List[str] = None):
+@router.post("/update_labels/")
+def update_labels(named_entity: NamedEntity = Depends(read_namedentity), additional_labels: List[str] = None):
     try:
-        if not additional_types:
+        if not additional_labels:
             raise HTTPException(status_code=400, detail="Additional types must be provided.")
 
         with driver.session() as session:
-            # Clear all additional labels and add new ones
-            session.run("""
-                MATCH (n:NamedEntity {namedentity_id: $namedentity_id})
-                SET n:`NamedEntity`
+            # Step 1: Match the node and extract all its labels
+            labels_result = session.run("""
+                MATCH (n {namedentity_id: $namedentity_id})
+                RETURN labels(n) AS labels
             """, namedentity_id=named_entity.namedentity_id)
 
-            # Add the new labels (additional types)
-            labels = ":".join(additional_types)
+            labels = labels_result.single()["labels"]
+
+            # Step 2: Remove all labels from the node
+            for label in labels:
+                session.run(f"""
+                    MATCH (n {{namedentity_id: $namedentity_id}})
+                    REMOVE n:`{label}`
+                """, namedentity_id=named_entity.namedentity_id)
+
+            # Step 3: Add back the NamedEntity label
+            session.run("""
+                MATCH (n {namedentity_id: $namedentity_id})
+                SET n:NamedEntity
+            """, namedentity_id=named_entity.namedentity_id)
+
+            # Step 4: Add the new labels (additional types)
+            labels = ":".join(additional_labels)
             session.run(f"""
                 MATCH (n:NamedEntity {{ namedentity_id: $namedentity_id }})
                 SET n:{labels}
@@ -157,7 +172,7 @@ def delete(named_entity: NamedEntity = Depends(read_namedentity)):
 
             for record in result:
                 statement_id = record["statement_id"]
-                delete_statement(statement_id=statement_id)
+                delete_statement_by_id(statement_id)  # Call the refactored delete function directly
 
             # Step B: Modify all statements connected via `:MENTIONS` relationship
             result = session.run("""

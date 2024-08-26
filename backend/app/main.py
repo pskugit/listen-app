@@ -18,8 +18,8 @@ async def startup_event():
 
 # Include your routers with distinct prefixes
 app.include_router(general_router, prefix="/general", tags=["General"])
-app.include_router(statement_router, prefix="/statement", tags=["Statement"])
 app.include_router(namedentity_router, prefix="/namedentity", tags=["Named Entity"])
+app.include_router(statement_router, prefix="/statement", tags=["Statement"])
 app.include_router(topic_router, prefix="/topic", tags=["Topic"])
 
 @app.get("/")

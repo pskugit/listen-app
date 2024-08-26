@@ -13,16 +13,6 @@ router = APIRouter()
 # Neo4j driver initialization
 driver = get_driver()
 
-@router.get("/test_connection")
-async def test_connection():
-    try:
-        with driver.session() as session:
-            result = session.run("MATCH (n) RETURN count(n)")
-            count = result.single()[0]
-        return {"count": count}
-    except Exception as e:
-        return HTTPException(status_code=500, detail=str(e))
-
 @router.get("/describe_graph")
 async def describe_graph():
     try:

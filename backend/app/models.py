@@ -14,7 +14,7 @@ class Topic(BaseModel):
 class NamedEntity(BaseModel):
     name: str
     namedentity_id: str = None 
-    additional_types: Optional[List[str]] = None  # Correctly define the optional list of strings
+    additional_labels: Optional[List[str]] = None  # Correctly define the optional list of strings
 
     class Config:
         allow_mutation = True  # Allow mutation of fields after instantiation
