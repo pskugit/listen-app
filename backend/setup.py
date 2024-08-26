@@ -8,7 +8,8 @@ setup(
         "fastapi",
         "uvicorn",
         "neo4j",
-        "pydantic"
-        # Add other dependencies here as needed
+        "pydantic",
+        "requests",
+        "pytest"
     ],
 )
