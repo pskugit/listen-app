@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import List
 from uuid import uuid4
 from app.models import NamedEntity, Statement
@@ -10,6 +10,27 @@ router = APIRouter()
 # Neo4j driver initialization
 driver = get_driver()
 
+def get_namedentity_by_id(namedentity_id: str):
+    with driver.session() as session:
+        result = session.run("""
+            MATCH (n:NamedEntity {namedentity_id: $namedentity_id})
+            RETURN n, labels(n) AS labels
+        """, namedentity_id=namedentity_id)
+
+        record = result.single()
+        if not record:
+            raise HTTPException(status_code=404, detail="NamedEntity not found")
+
+        node = record["n"]
+        labels = record["labels"]
+
+        named_entity = NamedEntity(
+            name=node["name"],
+            namedentity_id=node["namedentity_id"],
+            additional_labels=[label for label in labels if label != "NamedEntity"]
+        )
+        return named_entity
+    
 @router.post("/create", description="Add a new NamedEntity to the database.")
 def create(named_entity: NamedEntity):
     namedentity_id = named_entity.namedentity_id or str(uuid4())
@@ -30,26 +51,7 @@ def create(named_entity: NamedEntity):
 
 @router.get("/read/", response_model=NamedEntity, description="Get a NamedEntity based on its ID.")
 def read_namedentity(namedentity_id: str):
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (n:NamedEntity {namedentity_id: $namedentity_id})
-            RETURN n, labels(n) AS labels
-        """, namedentity_id=namedentity_id)
-
-        record = result.single()
-        if not record:
-            raise HTTPException(status_code=404, detail="NamedEntity not found")
-
-        node = record["n"]
-        labels = record["labels"]
-
-        named_entity = NamedEntity(
-            name=node["name"],
-            namedentity_id=node["namedentity_id"],
-            additional_labels=[label for label in labels if label != "NamedEntity"]
-        )
-        
-        return named_entity
+        return get_namedentity_by_id(namedentity_id)
 
 
 @router.post("/get_by_name/", description="Get all NamedEntities with a specific name.")
@@ -84,7 +86,8 @@ def get_by_name(name: str):
     
 
 @router.post("/get_statements/", response_model=List[Statement], description="Get all statements connected to the given named entity.")
-def get_statements(named_entity: NamedEntity = Depends(read_namedentity)):
+def get_statements(namedentity_id: str):
+    named_entity = read_namedentity(namedentity_id)
     try:
         with driver.session() as session:
             result = session.run("""
@@ -92,8 +95,13 @@ def get_statements(named_entity: NamedEntity = Depends(read_namedentity)):
                 RETURN s.text AS text, s.statement_id AS statement_id
             """, namedentity_id=named_entity.namedentity_id)
 
+            mentioned_result = session.run("""
+                MATCH (s:Statement {statement_id: $statement_id})-[:MENTIONS]->(m:NamedEntity)
+                RETURN m.namedentity_id AS mentioned_id
+            """, statement_id=statement_id)
+
             statements = []
-            for record in result:
+            for record in result+mentioned_result:
                 statement_id = record["statement_id"]
                 text = record["text"]
 
@@ -105,13 +113,6 @@ def get_statements(named_entity: NamedEntity = Depends(read_namedentity)):
                     statement_id=statement_id,
                     about_namedentity_id=named_entity.namedentity_id
                 )
-
-                mentioned_result = session.run("""
-                    MATCH (s:Statement {statement_id: $statement_id})-[:MENTIONS]->(m:NamedEntity)
-                    RETURN m.namedentity_id AS mentioned_id
-                """, statement_id=statement_id)
-
-                mentioned_ids = [r["mentioned_id"] for r in mentioned_result]
                 
                 statements.append(statement)
 
@@ -121,7 +122,8 @@ def get_statements(named_entity: NamedEntity = Depends(read_namedentity)):
 
 
 @router.post("/update_labels/")
-def update_labels(named_entity: NamedEntity = Depends(read_namedentity), additional_labels: List[str] = None):
+def update_labels(namedentity_id: str, additional_labels: List[str] = None):
+    named_entity = read_namedentity(namedentity_id)
     try:
         if not additional_labels:
             raise HTTPException(status_code=400, detail="Additional types must be provided.")
@@ -161,34 +163,22 @@ def update_labels(named_entity: NamedEntity = Depends(read_namedentity), additio
     
 
 @router.post("/delete/")
-def delete(named_entity: NamedEntity = Depends(read_namedentity)):
+def delete(namedentity_id: str):
+    named_entity = read_namedentity(namedentity_id)
+
     try:
         with driver.session() as session:
-            # Step A: Delete all statements connected via `IS_ABOUT` relationship
+            # Delete all statements connected via `IS_ABOUT` relationship
             result = session.run("""
                 MATCH (n:NamedEntity {namedentity_id: $namedentity_id})<-[:IS_ABOUT]-(s:Statement)
                 RETURN s.statement_id AS statement_id
-            """, namedentity_id=named_entity.namedentity_id)
+            """, namedentity_id=namedentity_id.namedentity_id)
 
             for record in result:
                 statement_id = record["statement_id"]
                 delete_statement_by_id(statement_id)  # Call the refactored delete function directly
 
-            # Step B: Modify all statements connected via `:MENTIONS` relationship
-            result = session.run("""
-                MATCH (s:Statement)-[r:MENTIONS]->(n:NamedEntity {namedentity_id: $namedentity_id})
-                RETURN s.statement_id AS statement_id
-            """, namedentity_id=named_entity.namedentity_id)
-
-            for record in result:
-                statement_id = record["statement_id"]
-
-                session.run("""
-                    MATCH (s:Statement {statement_id: $statement_id})-[r:MENTIONS]->(n:NamedEntity {namedentity_id: $namedentity_id})
-                    DELETE r
-                """, statement_id=statement_id, namedentity_id=named_entity.namedentity_id)
-
-            # Step C: Finally, delete the NamedEntity itself
+            # Delete the NamedEntity itself
             result = session.run("""
                 MATCH (n:NamedEntity {namedentity_id: $namedentity_id})
                 DETACH DELETE n

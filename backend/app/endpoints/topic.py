@@ -9,20 +9,7 @@ router = APIRouter()
 # Neo4j driver initialization
 driver = get_driver()
 
-@router.post("/create/")
-def create(topic: Topic):
-    topic_id = topic.topic_id or str(uuid4())
-    try:
-        with driver.session() as session:
-            session.run(""" 
-            CREATE (p:Topic {name: $name, topic_id: $topic_id})
-            """, name=topic.name, topic_id=topic_id)
-        return {"message": "Topic added successfully", "name": topic.name, "topic_id": topic_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/read/", response_model=Topic, description="Get a topic based on its ID.")
-def read_topic(topic_id: str):
+def get_topic_by_id(topic_id: str):
     with driver.session() as session:
         result = session.run("""
             MATCH (t:Topic {topic_id: $topic_id})
@@ -38,6 +25,24 @@ def read_topic(topic_id: str):
             name=node["name"],
             topic_id=node["topic_id"]
         )
+
+
+@router.post("/create/")
+def create(topic: Topic):
+    topic_id = topic.topic_id or str(uuid4())
+    try:
+        with driver.session() as session:
+            session.run(""" 
+            CREATE (p:Topic {name: $name, topic_id: $topic_id})
+            """, name=topic.name, topic_id=topic_id)
+        return {"message": "Topic added successfully", "name": topic.name, "topic_id": topic_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/read/", response_model=Topic, description="Get a topic based on its ID.")
+def read_topic(topic_id: str):
+    return get_topic_by_id(topic_id)
 
 
 @router.get("/list_all_topics/", response_model=List[Topic], description="Get a list of all topics in the graph")
@@ -64,7 +69,8 @@ def list_all_topics():
 
 
 @router.post("/update_name/", description="Update the name of an existing Topic.")
-def update_name(new_name: str, topic: Topic = Depends(read_topic)):
+def update_name(new_name: str, topic_id: str):
+    topic = get_topic_by_id(topic_id)
     try:
         with driver.session() as session:
             result = session.run("""
@@ -83,7 +89,8 @@ def update_name(new_name: str, topic: Topic = Depends(read_topic)):
     
 
 @router.post("/delete/")
-def delete(topic: Topic = Depends(read_topic)):
+def delete(topic_id: str):
+    topic = get_topic_by_id(topic_id)
     try:
         with driver.session() as session:
             result = session.run("""

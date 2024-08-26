@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import Optional, List
 from uuid import uuid4
 from app.models import Statement
@@ -133,7 +133,8 @@ def read_statement(statement_id: str):
 
 
 @router.post("/set_topic/")
-def set_topic(topic_id: Optional[str] = None, statement: Statement = Depends(read_statement)):
+def set_topic(statement_id: str, topic_id: Optional[str] = None, ):
+    statement = get_statement_by_id(statement_id)
     try:
         with driver.session() as session:
             # Step 1: Remove existing HAS_TOPIC relationships from the statement
@@ -157,7 +158,8 @@ def set_topic(topic_id: Optional[str] = None, statement: Statement = Depends(rea
 
 
 @router.post("/add_mentions/")
-def add_mentions(mentioned_namedentity_ids: List[str], statement: Statement = Depends(read_statement)):
+def add_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
+    statement = get_statement_by_id(statement_id)
     try:
         with driver.session() as session:
             handle_mentions(session, statement, mentioned_namedentity_ids)
@@ -168,7 +170,8 @@ def add_mentions(mentioned_namedentity_ids: List[str], statement: Statement = De
 
 
 @router.post("/update_mentions/")
-def update_mentions(mentioned_namedentity_ids: List[str], statement: Statement = Depends(read_statement)):
+def update_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
+    statement = get_statement_by_id(statement_id)
     try:
         with driver.session() as session:
             # Remove existing MENTIONS relationships
@@ -199,6 +202,6 @@ def update_text(statement_id: str, new_text: str):
 
 
 @router.post("/delete/")
-def delete_statement(statement: Statement = Depends(read_statement)):
-    return delete_statement_by_id(statement.statement_id)
+def delete_statement(statement_id: str):
+    return delete_statement_by_id(statement_id)
 

@@ -11,9 +11,9 @@ def named_entity_exists(driver, namedentity_id: str) -> bool:
         return result.single()[0]
 
 
-def get_driver(uri: str = "bolt://neo4j:7687", user: str = "neo4j", password: str = "password"):
-    driver = GraphDatabase.driver(uri, auth=(user, password))
-    return driver
+#def get_driver(uri: str = "bolt://neo4j:7687", user: str = "neo4j", password: str = "password"):
+#    driver = GraphDatabase.driver(uri, auth=(user, password))
+#    return driver
 
 
 def get_driver():

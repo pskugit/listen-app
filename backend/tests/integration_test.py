@@ -72,6 +72,93 @@ def test_create_namedentity_duplicate(driver):
     assert "detail" in response.json()  # Checking if error detail is returned
 
 
+def test_remove_entity_and_associated_statements(driver):
+    # Create a NamedEntity
+    namedentity_payload = {"name": "TestEntityToDelete", "namedentity_id": "ne_delete", "additional_labels": ["Person"]}
+    response = requests.post(URL + "namedentity/create/", json=namedentity_payload)
+    assert response.status_code == 200
+
+    # Add statements associated with this NamedEntity
+    statement_payload1 = {"text": "Statement 1", "statement_id": "s1", "about_namedentity_id": "ne_delete"}
+    statement_payload2 = {"text": "Statement 2", "statement_id": "s2", "about_namedentity_id": "ne_delete"}
+    requests.post(URL + "statement/create/", json=statement_payload1)
+    requests.post(URL + "statement/create/", json=statement_payload2)
+
+    # Delete the NamedEntity
+    # Test removing an entity
+    response = requests.post(URL + "namedentity/delete/?namedentity_id=ne_delete")
+    print(response.json())  # Add this line to see the response message for debugging
+
+    assert response.status_code == 200
+
+    # Verify that the entity and associated statements are deleted
+    with driver.session() as session:
+        entity = session.run("MATCH (n:NamedEntity {namedentity_id: 'ne_delete'}) RETURN n").single()
+        statement1 = session.run("MATCH (s:Statement {statement_id: 's1'}) RETURN s").single()
+        statement2 = session.run("MATCH (s:Statement {statement_id: 's2'}) RETURN s").single()
+        assert entity is None
+        assert statement1 is None
+        assert statement2 is None
+
+
+def test_add_mentions_and_check_connections(driver):
+    # Create NamedEntities
+    entity1_payload = {"name": "Entity1", "namedentity_id": "ne_mention1", "additional_labels": ["Person"]}
+    entity2_payload = {"name": "Entity2", "namedentity_id": "ne_mention2", "additional_labels": ["Person"]}
+    requests.post(URL + "namedentity/create/", json=entity1_payload)
+    requests.post(URL + "namedentity/create/", json=entity2_payload)
+
+    # Create a statement
+    statement_payload = {"text": "Statement with mentions", "statement_id": "s4", "about_namedentity_id": "ne_mention1"}
+    requests.post(URL + "statement/create/", json=statement_payload)
+
+    # Add mentions to the statement
+    mentions_payload = {"mentioned_namedentity_ids": ["ne_mention1", "ne_mention2"]}
+    response = requests.post(URL + "statement/update_mentions/?statement_id=s4", json=mentions_payload)
+    assert response.status_code == 200
+
+    # Verify the relationships are created
+    with driver.session() as session:
+        connection = session.run("""
+            MATCH (e1:NamedEntity {namedentity_id: 'ne_mention1'})-[:SOME_RELATION]->(e2:NamedEntity {namedentity_id: 'ne_mention2'})
+            RETURN e1, e2
+        """).single()
+        assert connection is not None
+
+def test_remove_statement_and_derived_relationships(driver):
+    # Create NamedEntities
+    entity1_payload = {"name": "Entity1", "namedentity_id": "ne_rel1", "additional_labels": ["Person"]}
+    entity2_payload = {"name": "Entity2", "namedentity_id": "ne_rel2", "additional_labels": ["Person"]}
+    requests.post(URL + "namedentity/create/", json=entity1_payload)
+    requests.post(URL + "namedentity/create/", json=entity2_payload)
+
+    # Create a statement and add mentions
+    statement_payload = {"text": "Statement to remove", "statement_id": "s5", "about_namedentity_id": "ne_rel1"}
+    requests.post(URL + "statement/create/", json=statement_payload)
+    mentions_payload = {"statement_id": "s5", "mentioned_namedentity_ids": ["ne_rel1", "ne_rel2"]}
+    requests.post(URL + "statement/update_mentions/", json=mentions_payload)
+
+    # Verify the relationships exist
+    with driver.session() as session:
+        connection = session.run("""
+            MATCH (e1:NamedEntity {namedentity_id: 'ne_rel1'})-[:SOME_RELATION]->(e2:NamedEntity {namedentity_id: 'ne_rel2'})
+            RETURN e1, e2
+        """).single()
+        assert connection is not None
+
+    # Delete the statement
+    response = requests.post(URL + "statement/delete/", json={"statement_id": "s5"})
+    assert response.status_code == 200
+
+    # Verify that the relationships based on the statement are removed
+    with driver.session() as session:
+        connection = session.run("""
+            MATCH (e1:NamedEntity {namedentity_id: 'ne_rel1'})-[:SOME_RELATION]->(e2:NamedEntity {namedentity_id: 'ne_rel2'})
+            RETURN e1, e2
+        """).single()
+        assert connection is None
+
+
 def test_cleanup(driver):
     # Clean up the test NamedEntity to ensure it doesn't interfere with other tests
     with driver.session() as session:
