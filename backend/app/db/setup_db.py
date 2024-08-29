@@ -4,7 +4,7 @@ from neo4j.exceptions import ServiceUnavailable
 
 driver = GraphDatabase.driver("bolt://neo4j:7687", auth=("neo4j", "password"))
 
-def is_database_empty():
+def is_database_empty(driver):
     for _ in range(5):  # Retry 5 times
         try:
             with driver.session() as session:
@@ -17,7 +17,7 @@ def is_database_empty():
         except Exception as e:
             print(f"An error occurred: {e}")
     
-def setup_database():
+def setup_database(driver):
     for _ in range(5):  # Retry 5 times
         try:
             with driver.session() as session:
@@ -30,7 +30,7 @@ def setup_database():
         except Exception as e:
             print(f"An error occurred: {e}")
 
-def fill_database_with_testdata():
+def fill_database_with_testdata(driver):
     try:
         with driver.session() as session:
             # Creating test persons

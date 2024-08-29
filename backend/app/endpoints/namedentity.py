@@ -164,6 +164,10 @@ def update_labels(namedentity_id: str, additional_labels: List[str] = None):
 
 @router.post("/delete/")
 def delete(namedentity_id: str):
+
+    # Just return the namedentity_id to ensure it's received correctly
+    print(f"deleting {namedentity_id}")
+
     named_entity = read_namedentity(namedentity_id)
 
     try:
@@ -172,7 +176,7 @@ def delete(namedentity_id: str):
             result = session.run("""
                 MATCH (n:NamedEntity {namedentity_id: $namedentity_id})<-[:IS_ABOUT]-(s:Statement)
                 RETURN s.statement_id AS statement_id
-            """, namedentity_id=namedentity_id.namedentity_id)
+            """, namedentity_id=named_entity.namedentity_id)
 
             for record in result:
                 statement_id = record["statement_id"]

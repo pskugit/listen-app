@@ -9,7 +9,7 @@ class Topic(BaseModel):
     topic_id: str = None 
 
     class Config:
-        allow_mutation = True  # Allow mutation of fields after instantiation
+        frozen = False  # Allow mutation of fields after instantiation
 
 class NamedEntity(BaseModel):
     name: str
@@ -17,7 +17,7 @@ class NamedEntity(BaseModel):
     additional_labels: Optional[List[str]] = None  # Correctly define the optional list of strings
 
     class Config:
-        allow_mutation = True  # Allow mutation of fields after instantiation
+        frozen = False  # Allow mutation of fields after instantiation
 
 class Statement(BaseModel):
     text: str
@@ -25,7 +25,7 @@ class Statement(BaseModel):
     about_namedentity_id: str
     
     class Config:
-        allow_mutation = True  # Allow mutation of fields after instantiation
+        frozen = False  # Allow mutation of fields after instantiation
     
 
 class RelationshipAttributes(BaseModel):

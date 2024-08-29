@@ -25,16 +25,16 @@ def driver():
 def database_setup_and_teardown(driver):
     # Setup: Create necessary constraints
     with driver.session() as session:
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (s:Statement) REQUIRE s.statement_id IS UNIQUE;")
-        session.run("CREATE CONSTRAINT IF NOT EXISTS FOR (p:NamedEntity) REQUIRE p.namedentity_id IS UNIQUE;")
+        session.run("CREATE CONSTRAINT c1 FOR (s:Statement) REQUIRE s.statement_id IS UNIQUE;")
+        session.run("CREATE CONSTRAINT c2 FOR (p:NamedEntity) REQUIRE p.namedentity_id IS UNIQUE;")
     
     yield  # This is where the test runs
 
     # Teardown: Remove all nodes, relationships, and constraints
     with driver.session() as session:
         session.run("MATCH (n) DETACH DELETE n")
-        session.run("DROP CONSTRAINT IF EXISTS ON (s:Statement) ASSERT s.statement_id IS UNIQUE")
-        session.run("DROP CONSTRAINT IF EXISTS ON (p:NamedEntity) ASSERT p.namedentity_id IS UNIQUE")
+        session.run("DROP CONSTRAINT c1")
+        session.run("DROP CONSTRAINT c2")
 
 
 def test_create_namedentity(driver):
@@ -66,6 +66,7 @@ def test_create_namedentity_duplicate(driver):
     }
     
     response = requests.post(URL + "namedentity/create/", json=payload)
+    response = requests.post(URL + "namedentity/create/", json=payload)
 
     # Assuming the app should handle duplicates, adjust this check based on your logic
     assert response.status_code == 500
@@ -86,7 +87,8 @@ def test_remove_entity_and_associated_statements(driver):
 
     # Delete the NamedEntity
     # Test removing an entity
-    response = requests.post(URL + "namedentity/delete/?namedentity_id=ne_delete")
+    namedentity_delete_payload = {"namedentity_id": "ne_delete"}
+    response = requests.post(URL + "namedentity/delete/", params=namedentity_delete_payload)
     print(response.json())  # Add this line to see the response message for debugging
 
     assert response.status_code == 200
@@ -105,16 +107,21 @@ def test_add_mentions_and_check_connections(driver):
     # Create NamedEntities
     entity1_payload = {"name": "Entity1", "namedentity_id": "ne_mention1", "additional_labels": ["Person"]}
     entity2_payload = {"name": "Entity2", "namedentity_id": "ne_mention2", "additional_labels": ["Person"]}
-    requests.post(URL + "namedentity/create/", json=entity1_payload)
-    requests.post(URL + "namedentity/create/", json=entity2_payload)
+    response = requests.post(URL + "namedentity/create/", json=entity1_payload)
+    response = requests.post(URL + "namedentity/create/", json=entity2_payload)
+    assert response.status_code == 200
 
     # Create a statement
     statement_payload = {"text": "Statement with mentions", "statement_id": "s4", "about_namedentity_id": "ne_mention1"}
-    requests.post(URL + "statement/create/", json=statement_payload)
+    response = requests.post(URL + "statement/create/", json=statement_payload)
+    assert response.status_code == 200
 
     # Add mentions to the statement
-    mentions_payload = {"mentioned_namedentity_ids": ["ne_mention1", "ne_mention2"]}
-    response = requests.post(URL + "statement/update_mentions/?statement_id=s4", json=mentions_payload)
+    mentions_payload = {
+        "statement_id": "s4",
+        "mentioned_namedentity_ids": ["ne_mention1", "ne_mention2"],
+    }   
+    response = requests.post(URL + "statement/update_mentions/", json=mentions_payload)
     assert response.status_code == 200
 
     # Verify the relationships are created
@@ -147,7 +154,7 @@ def test_remove_statement_and_derived_relationships(driver):
         assert connection is not None
 
     # Delete the statement
-    response = requests.post(URL + "statement/delete/", json={"statement_id": "s5"})
+    response = requests.post(URL + "statement/delete/", params={"statement_id": "s5"})
     assert response.status_code == 200
 
     # Verify that the relationships based on the statement are removed

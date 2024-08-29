@@ -4,6 +4,7 @@ from uuid import uuid4
 from app.models import Statement
 from app.genai.genai import derive_relation_type_from_text
 from app.utils.neo4j import named_entity_exists, get_driver
+from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -168,10 +169,13 @@ def add_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class UpdateMentionsRequest(BaseModel):
+    statement_id: str
+    mentioned_namedentity_ids: List[str]
 
 @router.post("/update_mentions/")
-def update_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
-    statement = get_statement_by_id(statement_id)
+def update_mentions(request: UpdateMentionsRequest):
+    statement = get_statement_by_id(request.statement_id)
     try:
         with driver.session() as session:
             # Remove existing MENTIONS relationships
@@ -181,7 +185,7 @@ def update_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
             delete_statement_relationships(session, statement.statement_id)
 
             # Handle the new mentions and derived relationships
-            handle_mentions(session, statement, mentioned_namedentity_ids)
+            handle_mentions(session, statement, request.mentioned_namedentity_ids)
 
         return {"message": "Mentions updated successfully"}
     except Exception as e:
