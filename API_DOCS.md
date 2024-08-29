@@ -4,17 +4,37 @@ API documentation for all existing data classes, structured clearly with propert
 
 ## NamedEntity
 
-Represents an individual entity with personal information.
+Represents an individual entity with personal information and optional labels.
 
 ### Properties
 - `name` (string, required): The name of the entity.
 - `namedentity_id` (string, optional): A unique identifier for the entity.
+- `additional_labels` (array of strings, optional): Additional labels or categories for the entity.
 
 ### Example
 ```json
 {
     "name": "Alice",
-    "namedentity_id": "ne1"
+    "namedentity_id": "ne1",
+    "additional_labels": ["Person"]
+}
+```
+
+---
+
+## Topic
+
+Represents a topic that can be associated with a statement.
+
+### Properties
+- `name` (string, required): The name of the topic.
+- `topic_id` (string, optional): A unique identifier for the topic.
+
+### Example
+```json
+{
+    "name": "Familie",
+    "topic_id": "t1"
 }
 ```
 
@@ -25,18 +45,16 @@ Represents an individual entity with personal information.
 Represents a statement related to a NamedEntity.
 
 ### Properties
-- `statement_text` (string, required): The text of the statement.
+- `text` (string, required): The text of the statement.
 - `statement_id` (string, optional): A unique identifier for the statement.
 - `about_namedentity_id` (string, required): The ID of the NamedEntity this statement is about.
-- `mentioned_namedentity_ids` (array of strings, optional): IDs of other entities mentioned in the statement.
 
 ### Example
 ```json
 {
-    "statement_text": "Married @Anna in Venice on 26.05.2023",
+    "text": "Married @Anna in Venice on 26.05.2023",
     "statement_id": "s3",
-    "about_namedentity_id": "ne1",
-    "mentioned_namedentity_ids": ["ne2", "ne3"]
+    "about_namedentity_id": "ne1"
 }
 ```
 
@@ -70,7 +88,7 @@ Defines the structure of a relationship between two nodes.
 - `from_node` (string, required): The ID of the starting node in the relationship.
 - `to_node` (string, required): The ID of the ending node in the relationship.
 - `relationship` (string, required): The type of relationship (e.g., "IS_ABOUT", "MENTIONS").
-- `attributes` (RelationshipAttributes, required): The attributes associated with this relationship.
+- `attributes` (RelationshipAttributes, optional): The attributes associated with this relationship.
 
 ### Example
 ```json
@@ -79,7 +97,10 @@ Defines the structure of a relationship between two nodes.
     "to_node": "ne2",
     "relationship": "IS_ABOUT",
     "attributes": {
-        "source_statement_id": "s3"
+        "source_statement_id": "s3",
+        "additional_properties": {
+            "extra_info": "Any additional data can go here."
+        }
     }
 }
 ```
@@ -99,7 +120,8 @@ Represents a connection between a NamedEntity and its relationship.
 {
     "connected_entity": {
         "name": "Bob",
-        "namedentity_id": "ne2"
+        "namedentity_id": "ne2",
+        "additional_labels": ["Person"]
     },
     "relationship": {
         "from_node": "ne1",

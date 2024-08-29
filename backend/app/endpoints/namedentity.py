@@ -2,34 +2,13 @@ from fastapi import APIRouter, HTTPException, Query, Body
 from typing import List, Optional
 from uuid import uuid4
 from app.models import NamedEntity, Statement
-from app.utils.neo4j import get_driver
+from app.utils.neo4j import get_driver, get_namedentity_by_id
 from app.endpoints.statement import delete_statement_by_id
 
 router = APIRouter()
 
 # Neo4j driver initialization
 driver = get_driver()
-
-def get_namedentity_by_id(namedentity_id: str):
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (n:NamedEntity {namedentity_id: $namedentity_id})
-            RETURN n, labels(n) AS labels
-        """, namedentity_id=namedentity_id)
-
-        record = result.single()
-        if not record:
-            raise HTTPException(status_code=404, detail="NamedEntity not found")
-
-        node = record["n"]
-        labels = record["labels"]
-
-        named_entity = NamedEntity(
-            name=node["name"],
-            namedentity_id=node["namedentity_id"],
-            additional_labels=[label for label in labels if label != "NamedEntity"]
-        )
-        return named_entity
     
 @router.post("/create", description="Add a new NamedEntity to the database.")
 def create(named_entity: NamedEntity):
@@ -51,7 +30,10 @@ def create(named_entity: NamedEntity):
 
 @router.get("/read/", response_model=NamedEntity, description="Get a NamedEntity based on its ID.")
 def read_namedentity(namedentity_id: str):
-        return get_namedentity_by_id(namedentity_id)
+        named_entity =  get_namedentity_by_id(driver, namedentity_id)
+        if named_entity is None:
+            raise HTTPException(status_code=404, detail="NamedEntity not found")
+        return named_entity
 
 
 @router.post("/get_by_name/", description="Get all NamedEntities with a specific name.")

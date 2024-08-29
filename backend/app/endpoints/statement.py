@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query, Body
 from typing import Optional, List
 from uuid import uuid4
-from app.models import Statement, NamedEntity
-from app.genai.genai import derive_relation_type_from_statement
-from app.utils.neo4j import named_entity_exists, get_driver
+from app.models import Statement, NamedEntity, Relationship
+from app.genai.genai import derive_relationships_from_statement
+from app.utils.neo4j import named_entity_exists, get_driver, get_statement_by_id
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -34,17 +34,28 @@ def remove_mentions_relationships(session, statement_id: str):
     """, statement_id=statement_id)
 
 
-def create_additional_relations(session, source_statement: Statement, entity_ids: List[str]):
-    relation_type, is_directional = derive_relation_type_from_statement(source_statement)
-    """Create connections of type relation_type between all named entities in the list."""
-    for i, source_entity_id in enumerate(entity_ids):
-        for target_entity_id in entity_ids[i+1:]:
-            session.run(f"""
+def create_additional_relations(session, source_statement: Statement):
+    mentioned_namedentities: List[NamedEntity] = get_mentioned_entities_for_statement(source_statement)
+    relationships: List[Relationship] = derive_relationships_from_statement(source_statement, mentioned_namedentities)
+    for relationship in relationships:
+        source_entity_id = relationship.from_node
+        target_entity_id = relationship.to_node
+        session.run(f"""
                 MATCH (e1:NamedEntity {{namedentity_id: $source_entity_id}}),
                       (e2:NamedEntity {{namedentity_id: $target_entity_id}})
-                CREATE (e1)-[:{relation_type} {{source_statement_id: $source_statement_id}}]->(e2)
-                CREATE (e2)-[:{relation_type} {{source_statement_id: $source_statement_id}}]->(e1)
+                CREATE (e1)-[:{relationship.relationship_type} {{source_statement_id: $source_statement_id}}]->(e2)
+                CREATE (e2)-[:{relationship.relationship_type} {{source_statement_id: $source_statement_id}}]->(e1)
             """, source_entity_id=source_entity_id, target_entity_id=target_entity_id, source_statement_id=source_statement.statement_id)
+
+    #"""Create connections of type relation_type between all named entities in the list."""
+    #for i, source_entity_id in enumerate(entity_ids):
+    #    for target_entity_id in entity_ids[i+1:]:
+    #        session.run(f"""
+    #            MATCH (e1:NamedEntity {{namedentity_id: $source_entity_id}}),
+    #                  (e2:NamedEntity {{namedentity_id: $target_entity_id}})
+    #            CREATE (e1)-[:{relation_type} {{source_statement_id: $source_statement_id}}]->(e2)
+    #            CREATE (e2)-[:{relation_type} {{source_statement_id: $source_statement_id}}]->(e1)
+    #        """, source_entity_id=source_entity_id, target_entity_id=target_entity_id, source_statement_id=source_statement.statement_id)
 
 
 def delete_statement_relationships(session, statement_id: str):
@@ -62,28 +73,9 @@ def handle_mentions(session, statement: Statement, mentioned_namedentity_ids: Li
         create_mentions_relationships(session, statement, mentioned_namedentity_ids)
 
         # Create additional SOME_RELATION relationships
-        entity_ids = mentioned_namedentity_ids + [statement.about_namedentity_id]
-        create_additional_relations(session, statement, entity_ids)
+        create_additional_relations(session, statement)
 
 
-def get_statement_by_id(statement_id: str) -> Statement:
-    with driver.session() as session:
-        result = session.run("""
-            MATCH (s:Statement {statement_id: $statement_id})-[:IS_ABOUT]->(n:NamedEntity)
-            RETURN s.text AS text, s.statement_id AS statement_id, n.namedentity_id AS about_namedentity_id
-        """, statement_id=statement_id)
-
-        record = result.single()
-        if not record:
-            raise HTTPException(status_code=404, detail="Statement not found")
-
-        statement = Statement(
-            text=record["text"],
-            statement_id=record["statement_id"],
-            about_namedentity_id=record["about_namedentity_id"],
-        )
-
-        return statement
 
 
 def delete_statement_by_id(statement_id: str):
@@ -98,6 +90,20 @@ def delete_statement_by_id(statement_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+
+def get_mentioned_entities_for_statement(statement: Statement):
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (s:Statement {statement_id: $statement_id})-[:MENTIONS]->(m:NamedEntity)
+                RETURN m.name AS name, m.namedentity_id AS namedentity_id, labels(m) AS labels
+            """, statement_id=statement.statement_id)
+            
+            # Convert the result to a list of NamedEntity objects
+            namedentities = [
+                NamedEntity(name=record["name"], namedentity_id=record["namedentity_id"], additional_labels=remove_and_return(record["labels"],"NamedEntity"))
+                for record in result
+            ]
+        return namedentities
 
 # Endpoints
 @router.post("/create/")
@@ -133,33 +139,28 @@ def create(statement: Statement):
 
 @router.get("/read/", response_model=Statement, description="Get a statement based on its ID.")
 def read_statement(statement_id: str):
-    return get_statement_by_id(statement_id)
+    statement = get_statement_by_id(driver, statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
+    raise HTTPException(status_code=404, detail="Statement not found")
 
 
 @router.post("/get_mentions/")
-def update_mentions(statement_id: str)  -> List[NamedEntity]:
-    statement = get_statement_by_id(statement_id)
+def get_mentions(statement_id: str)  -> List[NamedEntity]:
+    statement = get_statement_by_id(driver, statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
     try:
-        with driver.session() as session:
-            result = session.run("""
-                MATCH (s:Statement {statement_id: $statement_id})-[:MENTIONS]->(m:NamedEntity)
-                RETURN m.name AS name, m.namedentity_id AS namedentity_id, labels(m) AS labels
-            """, statement_id=statement.statement_id)
-            
-            # Convert the result to a list of NamedEntity objects
-            namedentities = [
-                NamedEntity(name=record["name"], namedentity_id=record["namedentity_id"], additional_labels=remove_and_return(record["labels"],"NamedEntity"))
-                for record in result
-            ]
-
-        return namedentities
+        get_mentioned_entities_for_statement(statement)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
 
 @router.post("/set_topic/")
 def set_topic(statement_id: str, topic_id: Optional[str] = None):
-    statement = get_statement_by_id(statement_id)
+    statement = get_statement_by_id(driver, statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
     try:
         with driver.session() as session:
             # Step 1: Remove existing HAS_TOPIC relationships from the statement
@@ -185,6 +186,8 @@ def set_topic(statement_id: str, topic_id: Optional[str] = None):
 @router.post("/add_mentions/")
 def add_mentions(mentioned_namedentity_ids: List[str] = Query(...), statement_id: str = Query(...)):
     statement = get_statement_by_id(statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
     try:
         with driver.session() as session:
             handle_mentions(session, statement, mentioned_namedentity_ids)
@@ -196,7 +199,9 @@ def add_mentions(mentioned_namedentity_ids: List[str] = Query(...), statement_id
 
 @router.post("/update_mentions/")
 def update_mentions(mentioned_namedentity_ids: List[str] = Query(...), statement_id: str = Query(...)):
-    statement = get_statement_by_id(statement_id)
+    statement = get_statement_by_id(driver, statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Statement not found")
     try:
         with driver.session() as session:
             # Remove existing MENTIONS relationships

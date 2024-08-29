@@ -36,7 +36,7 @@ class RelationshipAttributes(BaseModel):
 class Relationship(BaseModel):
     from_node: str
     to_node: str
-    relationship: str
+    relationship_type: str
     attributes: Optional[RelationshipAttributes]
 
 class Connection(BaseModel):
