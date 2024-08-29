@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Body
 from typing import Optional, List
 from uuid import uuid4
 from app.models import Statement
@@ -134,7 +134,7 @@ def read_statement(statement_id: str):
 
 
 @router.post("/set_topic/")
-def set_topic(statement_id: str, topic_id: Optional[str] = None, ):
+def set_topic(statement_id: str, topic_id: Optional[str] = None):
     statement = get_statement_by_id(statement_id)
     try:
         with driver.session() as session:
@@ -159,7 +159,7 @@ def set_topic(statement_id: str, topic_id: Optional[str] = None, ):
 
 
 @router.post("/add_mentions/")
-def add_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
+def add_mentions(mentioned_namedentity_ids: List[str] = Query(...), statement_id: str = Query(...)):
     statement = get_statement_by_id(statement_id)
     try:
         with driver.session() as session:
@@ -169,13 +169,10 @@ def add_mentions(mentioned_namedentity_ids: List[str], statement_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class UpdateMentionsRequest(BaseModel):
-    statement_id: str
-    mentioned_namedentity_ids: List[str]
 
 @router.post("/update_mentions/")
-def update_mentions(request: UpdateMentionsRequest):
-    statement = get_statement_by_id(request.statement_id)
+def update_mentions(mentioned_namedentity_ids: List[str] = Query(...), statement_id: str = Query(...)):
+    statement = get_statement_by_id(statement_id)
     try:
         with driver.session() as session:
             # Remove existing MENTIONS relationships
@@ -185,7 +182,7 @@ def update_mentions(request: UpdateMentionsRequest):
             delete_statement_relationships(session, statement.statement_id)
 
             # Handle the new mentions and derived relationships
-            handle_mentions(session, statement, request.mentioned_namedentity_ids)
+            handle_mentions(session, statement, mentioned_namedentity_ids)
 
         return {"message": "Mentions updated successfully"}
     except Exception as e:

@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi import APIRouter, HTTPException, Query, Body
+from typing import List, Optional
 from uuid import uuid4
 from app.models import NamedEntity, Statement
 from app.utils.neo4j import get_driver
@@ -122,12 +122,12 @@ def get_statements(namedentity_id: str):
 
 
 @router.post("/update_labels/")
-def update_labels(namedentity_id: str, additional_labels: List[str] = None):
+def update_labels(
+    namedentity_id: str = Query(...),
+    additional_labels: Optional[List[str]] = Query(default=[])
+):
     named_entity = read_namedentity(namedentity_id)
     try:
-        if not additional_labels:
-            raise HTTPException(status_code=400, detail="Additional types must be provided.")
-
         with driver.session() as session:
             # Step 1: Match the node and extract all its labels
             labels_result = session.run("""
@@ -150,12 +150,13 @@ def update_labels(namedentity_id: str, additional_labels: List[str] = None):
                 SET n:NamedEntity
             """, namedentity_id=named_entity.namedentity_id)
 
-            # Step 4: Add the new labels (additional types)
-            labels = ":".join(additional_labels)
-            session.run(f"""
-                MATCH (n:NamedEntity {{ namedentity_id: $namedentity_id }})
-                SET n:{labels}
-            """, namedentity_id=named_entity.namedentity_id)
+            if additional_labels:
+                # Step 4: Add the new labels (additional types)
+                labels = ":".join(additional_labels)
+                session.run(f"""
+                    MATCH (n:NamedEntity {{ namedentity_id: $namedentity_id }})
+                    SET n:{labels}
+                """, namedentity_id=named_entity.namedentity_id)
 
         return {"message": "NamedEntity types updated successfully"}
     except Exception as e:
