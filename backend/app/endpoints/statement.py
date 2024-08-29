@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query, Body
 from typing import Optional, List
 from uuid import uuid4
-from app.models import Statement
-from app.genai.genai import derive_relation_type_from_text
+from app.models import Statement, NamedEntity
+from app.genai.genai import derive_relation_type_from_statement
 from app.utils.neo4j import named_entity_exists, get_driver
 from pydantic import BaseModel
 
@@ -12,6 +12,9 @@ router = APIRouter()
 driver = get_driver()
 
 # Helper methods
+def remove_and_return(lst, element):
+    return [item for item in lst if item != element]
+
 def create_mentions_relationships(session, statement: Statement, mentioned_namedentity_ids: List[str]):
     """Create MENTIONS relationships from the statement to the mentioned named entities."""
     for mentioned_id in mentioned_namedentity_ids:
@@ -32,7 +35,7 @@ def remove_mentions_relationships(session, statement_id: str):
 
 
 def create_additional_relations(session, source_statement: Statement, entity_ids: List[str]):
-    relation_type = derive_relation_type_from_text(source_statement.text)
+    relation_type, is_directional = derive_relation_type_from_statement(source_statement)
     """Create connections of type relation_type between all named entities in the list."""
     for i, source_entity_id in enumerate(entity_ids):
         for target_entity_id in entity_ids[i+1:]:
@@ -132,6 +135,27 @@ def create(statement: Statement):
 def read_statement(statement_id: str):
     return get_statement_by_id(statement_id)
 
+
+@router.post("/get_mentions/")
+def update_mentions(statement_id: str)  -> List[NamedEntity]:
+    statement = get_statement_by_id(statement_id)
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (s:Statement {statement_id: $statement_id})-[:MENTIONS]->(m:NamedEntity)
+                RETURN m.name AS name, m.namedentity_id AS namedentity_id, labels(m) AS labels
+            """, statement_id=statement.statement_id)
+            
+            # Convert the result to a list of NamedEntity objects
+            namedentities = [
+                NamedEntity(name=record["name"], namedentity_id=record["namedentity_id"], additional_labels=remove_and_return(record["labels"],"NamedEntity"))
+                for record in result
+            ]
+
+        return namedentities
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 @router.post("/set_topic/")
 def set_topic(statement_id: str, topic_id: Optional[str] = None):
